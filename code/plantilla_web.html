@@ -126,11 +126,11 @@ el('sub').textContent = `Tras ${jornadas} jornadas · ${D.n_sims.toLocaleString(
 el('sub-temp').textContent = 'Ordenado por puntos esperados. Rango de puntos = intervalo del 90 % de las simulaciones.';
 
 // KPIs
-const top = (k) => [...R].sort((a, b) => b[k] - a[k]);
-const desc = top('P_Descenso').slice(0, 3);
+const ordenar = (k) => [...R].sort((a, b) => b[k] - a[k]);
+const desc = ordenar('P_Descenso').slice(0, 3);
 el('kpis').innerHTML = [
-  ['Favorito al título', top('P_Campeón')[0].Equipo, pct(top('P_Campeón')[0]['P_Campeón']) + ' de probabilidad'],
-  ['Segundo candidato', top('P_Campeón')[1].Equipo, pct(top('P_Campeón')[1]['P_Campeón'])],
+  ['Favorito al título', ordenar('P_Campeón')[0].Equipo, pct(ordenar('P_Campeón')[0]['P_Campeón']) + ' de probabilidad'],
+  ['Segundo candidato', ordenar('P_Campeón')[1].Equipo, pct(ordenar('P_Campeón')[1]['P_Campeón'])],
   ['Más cerca del descenso', desc[0].Equipo, pct(desc[0].P_Descenso)],
   ['Puntos del campeón (media)', Math.round(Math.max(...R.map(r => r.Pts_esperados))) + ' pts', 'equipo con más puntos esperados'],
 ].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
