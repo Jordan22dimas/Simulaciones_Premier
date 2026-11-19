@@ -1,0 +1,66 @@
+{
+  "test_temporadas": [
+    "2324",
+    "2425",
+    "2526"
+  ],
+  "n_test": 1140,
+  "metricas": {
+    "Poisson + Dixon-Coles": {
+      "log_loss": 0.9805,
+      "rps": 0.2003,
+      "brier": 0.1949,
+      "accuracy": 0.5386
+    },
+    "Clasificador calibrado": {
+      "log_loss": 0.9881,
+      "rps": 0.2012,
+      "brier": 0.1962,
+      "accuracy": 0.5351
+    },
+    "Ensemble 50/50": {
+      "log_loss": 0.9825,
+      "rps": 0.2004,
+      "brier": 0.1952,
+      "accuracy": 0.5307
+    },
+    "Elo puro": {
+      "log_loss": 0.9842,
+      "rps": 0.2014,
+      "brier": 0.1959,
+      "accuracy": 0.5298
+    },
+    "Mercado (cuotas medias)": {
+      "log_loss": 0.965,
+      "rps": 0.1955,
+      "brier": 0.1913,
+      "accuracy": 0.5421
+    },
+    "Base (frecuencias)": {
+      "log_loss": 1.0723,
+      "rps": 0.2321,
+      "brier": 0.2164,
+      "accuracy": 0.4316
+    }
+  },
+  "modelo_elegido": "Poisson + Dixon-Coles",
+  "rho": -0.09,
+  "mae_goles": 0.9234,
+  "hiperparametros_local": {
+    "n_estimators": 300,
+    "learning_rate": 0.02,
+    "max_depth": 2,
+    "min_child_weight": 10,
+    "colsample_bytree": 0.3,
+    "subsample": 0.7
+  },
+  "hiperparametros_visitante": {
+    "n_estimators": 300,
+    "learning_rate": 0.02,
+    "max_depth": 2,
+    "min_child_weight": 10,
+    "colsample_bytree": 0.3,
+    "subsample": 0.7
+  },
+  "fecha_entrenamiento": "2026-11-08"
+}

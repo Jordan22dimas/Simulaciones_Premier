@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulaciones Premier</title>
+<meta name="description" content="Predicciones y Monte Carlo de la Premier League 2026-27 con XGBoost + Dixon-Coles">
+<style>
+:root{
+  --bg:#f7f7f5; --surface:#ffffff; --ink:#1a1a1a; --muted:#6b6b6b; --line:#e4e4e0;
+  --accent:#3d1a6e; --accent-soft:#ece6f5; --good:#1f7a4d; --bad:#b3261e; --warn:#a86b00;
+  --heat:61,26,110;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121214; --surface:#1c1c1f; --ink:#ececec; --muted:#9a9aa0; --line:#2c2c31;
+    --accent:#c9b3f0; --accent-soft:#2b2340; --good:#5cc994; --bad:#ff8a80; --warn:#f0b54a;
+    --heat:201,179,240;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121214; --surface:#1c1c1f; --ink:#ececec; --muted:#9a9aa0; --line:#2c2c31;
+  --accent:#c9b3f0; --accent-soft:#2b2340; --good:#5cc994; --bad:#ff8a80; --warn:#f0b54a;
+  --heat:201,179,240;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:32px 16px 64px}
+header h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}
+header p{margin:0;color:var(--muted)}
+nav{display:flex;gap:4px;margin:24px 0 16px;flex-wrap:wrap}
+nav button{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;border-radius:999px;font:inherit;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+section{display:none} section.on{display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h2{font-size:17px;margin:0 0 4px} .card .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:22px;font-weight:650;margin-top:4px} .kpi .d{color:var(--muted);font-size:13px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface)}
+td.t,th.t{text-align:left} td.n{color:var(--muted);width:28px}
+tr:last-child td{border-bottom:0}
+.bar{position:relative;min-width:84px}
+.bar span{position:absolute;left:0;top:5px;bottom:5px;background:var(--accent-soft);border-radius:3px}
+.bar b{position:relative;font-weight:500}
+.z-ucl td:first-child{box-shadow:inset 3px 0 var(--good)} .z-desc td:first-child{box-shadow:inset 3px 0 var(--bad)}
+.heat td{padding:0;width:34px;height:26px;text-align:center;font-size:11px;border:1px solid var(--surface)}
+.heat th{font-size:11px;padding:4px 2px;text-align:center}
+.partidos{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.p{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.p .f{color:var(--muted);font-size:12px} .p .eq{display:flex;justify-content:space-between;font-weight:600;margin:6px 0 10px}
+.tri{display:flex;height:28px;border-radius:6px;overflow:hidden;font-size:12px;font-weight:600}
+.tri div{display:flex;align-items:center;justify-content:center;color:#fff;min-width:24px}
+.tri .a{background:#3d1a6e}.tri .x{background:#8a8a8a}.tri .b{background:#c25b1f}
+.p .meta{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:10px;gap:8px;flex-wrap:wrap}
+.vacio{color:var(--muted);padding:24px;text-align:center}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+footer{color:var(--muted);font-size:13px;margin-top:32px}
+.tema{float:right;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}
+ul.m{padding-left:18px;margin:0} ul.m li{margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <button class="tema" id="tema" aria-label="Cambiar tema">◐</button>
+  <h1>Simulaciones Premier League 2026‑27</h1>
+  <p id="sub"></p>
+</header>
+<nav role="tablist">
+  <button role="tab" data-s="temporada" aria-selected="true">Temporada</button>
+  <button role="tab" data-s="jornada">Próxima jornada</button>
+  <button role="tab" data-s="posiciones">Posiciones</button>
+  <button role="tab" data-s="clasif">Clasificación</button>
+  <button role="tab" data-s="modelo">Modelo</button>
+</nav>
+
+<section id="temporada" class="on">
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h2>Probabilidades a final de temporada</h2>
+    <p class="sub" id="sub-temp"></p>
+    <div class="scroll"><table id="t-resumen"></table></div></div>
+</section>
+<section id="jornada"><div id="partidos"></div></section>
+<section id="posiciones"><div class="card"><h2>Probabilidad de cada posición final</h2>
+  <p class="sub">Cada fila suma 100 %. Cuanto más intenso el color, más probable.</p>
+  <div class="scroll"><table class="heat" id="t-heat"></table></div></div></section>
+<section id="clasif"><div class="card"><h2>Clasificación actual</h2><p class="sub">Datos reales de football-data.co.uk</p>
+  <div class="scroll"><table id="t-clasif"></table></div></div></section>
+<section id="modelo">
+  <div class="card"><h2>Rendimiento fuera de muestra</h2><p class="sub" id="sub-mod"></p>
+    <div class="scroll"><table id="t-met"></table></div></div>
+  <div class="card"><h2>Cómo funciona</h2><ul class="m">
+    <li><b>Datos:</b> Premier y Championship desde 2005‑06 (football-data.co.uk). xG real cuando existe; si no, xG estimado a partir de remates.</li>
+    <li><b>Variables:</b> Elo propio, medias móviles (3, 5 y 10 partidos y exponencial), forma de la temporada, forma en casa/fuera, H2H y % de partidos recientes en Championship (ascendidos).</li>
+    <li><b>Modelo:</b> dos XGBoost Tweedie predicen los goles esperados → matriz Poisson con corrección Dixon‑Coles. Un clasificador 1X2 calibrado compite con él; se queda el de menor log‑loss.</li>
+    <li><b>Monte Carlo:</b> se simula el resto de la temporada partido a partido. Cada simulación añade un shock aleatorio de fuerza por equipo para no ser sobreconfiados.</li>
+    <li><b>Benchmark:</b> las cuotas de las casas de apuestas. Superarlas es muy difícil; quedarse cerca ya indica un modelo bien calibrado.</li>
+  </ul></div>
+</section>
+<footer>Proyecto educativo · No es consejo de apuestas.</footer>
+</div>
+<script>
+const D = {"actualizado": "19/11/2026 14:25 UTC", "n_sims": 10000, "resumen": [{"Equipo": "Arsenal", "Pos_actual": 1, "PJ": 10, "Pts_actuales": 27, "DG": 10.0, "Pts_esperados": 82.0, "Pts_p5": 69.0, "Pts_p95": 94.0, "Pos_media": 1.65, "P_Campeón": 0.5998, "P_Top 4": 0.9824, "P_Top 5 (UCL)": 0.9935, "P_Top 7 (Europa)": 0.9988, "P_Descenso": 0.0}, {"Equipo": "Man City", "Pos_actual": 3, "PJ": 10, "Pts_actuales": 21, "DG": 8.0, "Pts_esperados": 75.2, "Pts_p5": 63.0, "Pts_p95": 87.0, "Pos_media": 2.63, "P_Campeón": 0.206, "P_Top 4": 0.911, "P_Top 5 (UCL)": 0.9589, "P_Top 7 (Europa)": 0.9905, "P_Descenso": 0.0}, {"Equipo": "Brighton", "Pos_actual": 2, "PJ": 10, "Pts_actuales": 22, "DG": 19.0, "Pts_esperados": 73.6, "Pts_p5": 61.0, "Pts_p95": 86.0, "Pos_media": 2.89, "P_Campeón": 0.1606, "P_Top 4": 0.8785, "P_Top 5 (UCL)": 0.9452, "P_Top 7 (Europa)": 0.9869, "P_Descenso": 0.0}, {"Equipo": "Liverpool", "Pos_actual": 4, "PJ": 10, "Pts_actuales": 18, "DG": 4.0, "Pts_esperados": 64.7, "Pts_p5": 52.0, "Pts_p95": 77.0, "Pos_media": 5.11, "P_Campeón": 0.0174, "P_Top 4": 0.4774, "P_Top 5 (UCL)": 0.6632, "P_Top 7 (Europa)": 0.8604, "P_Descenso": 0.0002}, {"Equipo": "Bournemouth", "Pos_actual": 7, "PJ": 10, "Pts_actuales": 15, "DG": 2.0, "Pts_esperados": 63.5, "Pts_p5": 51.0, "Pts_p95": 76.0, "Pos_media": 5.39, "P_Campeón": 0.0139, "P_Top 4": 0.4064, "P_Top 5 (UCL)": 0.6227, "P_Top 7 (Europa)": 0.8369, "P_Descenso": 0.0005}, {"Equipo": "Chelsea", "Pos_actual": 5, "PJ": 10, "Pts_actuales": 16, "DG": 3.0, "Pts_esperados": 54.8, "Pts_p5": 42.0, "Pts_p95": 68.0, "Pos_media": 8.69, "P_Campeón": 0.0007, "P_Top 4": 0.0879, "P_Top 5 (UCL)": 0.1825, "P_Top 7 (Europa)": 0.4248, "P_Descenso": 0.012}, {"Equipo": "Everton", "Pos_actual": 6, "PJ": 10, "Pts_actuales": 16, "DG": 2.0, "Pts_esperados": 52.3, "Pts_p5": 40.0, "Pts_p95": 65.0, "Pos_media": 9.81, "P_Campeón": 0.0006, "P_Top 4": 0.0505, "P_Top 5 (UCL)": 0.1152, "P_Top 7 (Europa)": 0.3036, "P_Descenso": 0.0212}, {"Equipo": "Leeds", "Pos_actual": 9, "PJ": 10, "Pts_actuales": 14, "DG": 2.0, "Pts_esperados": 51.9, "Pts_p5": 39.0, "Pts_p95": 65.0, "Pos_media": 9.99, "P_Campeón": 0.0003, "P_Top 4": 0.0432, "P_Top 5 (UCL)": 0.1034, "P_Top 7 (Europa)": 0.2904, "P_Descenso": 0.0285}, {"Equipo": "Man United", "Pos_actual": 18, "PJ": 10, "Pts_actuales": 8, "DG": -5.0, "Pts_esperados": 51.4, "Pts_p5": 38.0, "Pts_p95": 64.0, "Pos_media": 10.13, "P_Campeón": 0.0002, "P_Top 4": 0.0422, "P_Top 5 (UCL)": 0.0988, "P_Top 7 (Europa)": 0.2767, "P_Descenso": 0.0299}, {"Equipo": "Brentford", "Pos_actual": 8, "PJ": 10, "Pts_actuales": 14, "DG": 5.0, "Pts_esperados": 50.4, "Pts_p5": 38.0, "Pts_p95": 63.0, "Pos_media": 10.6, "P_Campeón": 0.0, "P_Top 4": 0.0312, "P_Top 5 (UCL)": 0.08, "P_Top 7 (Europa)": 0.2328, "P_Descenso": 0.0382}, {"Equipo": "Tottenham", "Pos_actual": 11, "PJ": 10, "Pts_actuales": 12, "DG": -1.0, "Pts_esperados": 49.9, "Pts_p5": 37.0, "Pts_p95": 63.0, "Pos_media": 10.85, "P_Campeón": 0.0002, "P_Top 4": 0.0296, "P_Top 5 (UCL)": 0.0727, "P_Top 7 (Europa)": 0.2096, "P_Descenso": 0.0429}, {"Equipo": "Aston Villa", "Pos_actual": 10, "PJ": 10, "Pts_actuales": 13, "DG": -3.0, "Pts_esperados": 49.8, "Pts_p5": 37.0, "Pts_p95": 63.0, "Pos_media": 11.0, "P_Campeón": 0.0002, "P_Top 4": 0.0256, "P_Top 5 (UCL)": 0.0678, "P_Top 7 (Europa)": 0.209, "P_Descenso": 0.0464}, {"Equipo": "Nott'm Forest", "Pos_actual": 16, "PJ": 10, "Pts_actuales": 9, "DG": -4.0, "Pts_esperados": 48.6, "Pts_p5": 36.0, "Pts_p95": 61.05, "Pos_media": 11.48, "P_Campeón": 0.0, "P_Top 4": 0.0205, "P_Top 5 (UCL)": 0.0526, "P_Top 7 (Europa)": 0.1741, "P_Descenso": 0.062}, {"Equipo": "Fulham", "Pos_actual": 15, "PJ": 10, "Pts_actuales": 10, "DG": -2.0, "Pts_esperados": 45.2, "Pts_p5": 33.0, "Pts_p95": 58.0, "Pos_media": 13.12, "P_Campeón": 0.0001, "P_Top 4": 0.0071, "P_Top 5 (UCL)": 0.0198, "P_Top 7 (Europa)": 0.0827, "P_Descenso": 0.1216}, {"Equipo": "Newcastle", "Pos_actual": 12, "PJ": 10, "Pts_actuales": 12, "DG": -3.0, "Pts_esperados": 43.0, "Pts_p5": 31.0, "Pts_p95": 56.0, "Pos_media": 14.23, "P_Campeón": 0.0, "P_Top 4": 0.003, "P_Top 5 (UCL)": 0.0091, "P_Top 7 (Europa)": 0.0467, "P_Descenso": 0.198}, {"Equipo": "Sunderland", "Pos_actual": 19, "PJ": 10, "Pts_actuales": 8, "DG": -9.0, "Pts_esperados": 42.5, "Pts_p5": 30.0, "Pts_p95": 55.0, "Pos_media": 14.45, "P_Campeón": 0.0, "P_Top 4": 0.0027, "P_Top 5 (UCL)": 0.0097, "P_Top 7 (Europa)": 0.0426, "P_Descenso": 0.2287}, {"Equipo": "Ipswich", "Pos_actual": 14, "PJ": 10, "Pts_actuales": 11, "DG": -5.0, "Pts_esperados": 38.9, "Pts_p5": 27.0, "Pts_p95": 51.0, "Pos_media": 16.0, "P_Campeón": 0.0, "P_Top 4": 0.0005, "P_Top 5 (UCL)": 0.0024, "P_Top 7 (Europa)": 0.0154, "P_Descenso": 0.3878}, {"Equipo": "Hull", "Pos_actual": 13, "PJ": 10, "Pts_actuales": 11, "DG": 0.0, "Pts_esperados": 38.3, "Pts_p5": 27.0, "Pts_p95": 51.0, "Pos_media": 16.19, "P_Campeón": 0.0, "P_Top 4": 0.0003, "P_Top 5 (UCL)": 0.0018, "P_Top 7 (Europa)": 0.0116, "P_Descenso": 0.4151}, {"Equipo": "Coventry", "Pos_actual": 17, "PJ": 10, "Pts_actuales": 9, "DG": -9.0, "Pts_esperados": 35.7, "Pts_p5": 24.0, "Pts_p95": 48.0, "Pos_media": 17.25, "P_Campeón": 0.0, "P_Top 4": 0.0, "P_Top 5 (UCL)": 0.0006, "P_Top 7 (Europa)": 0.0058, "P_Descenso": 0.5797}, {"Equipo": "Crystal Palace", "Pos_actual": 20, "PJ": 10, "Pts_actuales": 7, "DG": -14.0, "Pts_esperados": 31.4, "Pts_p5": 20.0, "Pts_p95": 44.0, "Pos_media": 18.55, "P_Campeón": 0.0, "P_Top 4": 0.0, "P_Top 5 (UCL)": 0.0001, "P_Top 7 (Europa)": 0.0007, "P_Descenso": 0.7873}], "tabla": [{"Equipo": "Arsenal", "Pos": 1, "GF": 15.0, "GC": 5.0, "G": 9, "E": 0, "P": 1, "PJ": 10, "DG": 10.0, "Pts": 27}, {"Equipo": "Brighton", "Pos": 2, "GF": 26.0, "GC": 7.0, "G": 7, "E": 1, "P": 2, "PJ": 10, "DG": 19.0, "Pts": 22}, {"Equipo": "Man City", "Pos": 3, "GF": 21.0, "GC": 13.0, "G": 7, "E": 0, "P": 3, "PJ": 10, "DG": 8.0, "Pts": 21}, {"Equipo": "Liverpool", "Pos": 4, "GF": 14.0, "GC": 10.0, "G": 5, "E": 3, "P": 2, "PJ": 10, "DG": 4.0, "Pts": 18}, {"Equipo": "Chelsea", "Pos": 5, "GF": 19.0, "GC": 16.0, "G": 5, "E": 1, "P": 4, "PJ": 10, "DG": 3.0, "Pts": 16}, {"Equipo": "Everton", "Pos": 6, "GF": 12.0, "GC": 10.0, "G": 4, "E": 4, "P": 2, "PJ": 10, "DG": 2.0, "Pts": 16}, {"Equipo": "Bournemouth", "Pos": 7, "GF": 16.0, "GC": 14.0, "G": 4, "E": 3, "P": 3, "PJ": 10, "DG": 2.0, "Pts": 15}, {"Equipo": "Brentford", "Pos": 8, "GF": 16.0, "GC": 11.0, "G": 3, "E": 5, "P": 2, "PJ": 10, "DG": 5.0, "Pts": 14}, {"Equipo": "Leeds", "Pos": 9, "GF": 10.0, "GC": 8.0, "G": 3, "E": 5, "P": 2, "PJ": 10, "DG": 2.0, "Pts": 14}, {"Equipo": "Aston Villa", "Pos": 10, "GF": 14.0, "GC": 17.0, "G": 3, "E": 4, "P": 3, "PJ": 10, "DG": -3.0, "Pts": 13}, {"Equipo": "Tottenham", "Pos": 11, "GF": 10.0, "GC": 11.0, "G": 3, "E": 3, "P": 4, "PJ": 10, "DG": -1.0, "Pts": 12}, {"Equipo": "Newcastle", "Pos": 12, "GF": 13.0, "GC": 16.0, "G": 3, "E": 3, "P": 4, "PJ": 10, "DG": -3.0, "Pts": 12}, {"Equipo": "Hull", "Pos": 13, "GF": 11.0, "GC": 11.0, "G": 2, "E": 5, "P": 3, "PJ": 10, "DG": 0.0, "Pts": 11}, {"Equipo": "Ipswich", "Pos": 14, "GF": 15.0, "GC": 20.0, "G": 3, "E": 2, "P": 5, "PJ": 10, "DG": -5.0, "Pts": 11}, {"Equipo": "Fulham", "Pos": 15, "GF": 10.0, "GC": 12.0, "G": 2, "E": 4, "P": 4, "PJ": 10, "DG": -2.0, "Pts": 10}, {"Equipo": "Nott'm Forest", "Pos": 16, "GF": 9.0, "GC": 13.0, "G": 2, "E": 3, "P": 5, "PJ": 10, "DG": -4.0, "Pts": 9}, {"Equipo": "Coventry", "Pos": 17, "GF": 10.0, "GC": 19.0, "G": 3, "E": 0, "P": 7, "PJ": 10, "DG": -9.0, "Pts": 9}, {"Equipo": "Man United", "Pos": 18, "GF": 14.0, "GC": 19.0, "G": 1, "E": 5, "P": 4, "PJ": 10, "DG": -5.0, "Pts": 8}, {"Equipo": "Sunderland", "Pos": 19, "GF": 8.0, "GC": 17.0, "G": 2, "E": 2, "P": 6, "PJ": 10, "DG": -9.0, "Pts": 8}, {"Equipo": "Crystal Palace", "Pos": 20, "GF": 10.0, "GC": 24.0, "G": 2, "E": 1, "P": 7, "PJ": 10, "DG": -14.0, "Pts": 7}], "jornada": [], "posiciones": {"equipos": ["Arsenal", "Man City", "Brighton", "Liverpool", "Bournemouth", "Chelsea", "Everton", "Leeds", "Man United", "Brentford", "Tottenham", "Aston Villa", "Nott'm Forest", "Fulham", "Newcastle", "Sunderland", "Ipswich", "Hull", "Coventry", "Crystal Palace"], "matriz": [[0.5998, 0.2351, 0.1094, 0.0381, 0.0111, 0.0042, 0.0011, 0.0007, 0.0001, 0.0004, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.206, 0.3317, 0.2582, 0.1151, 0.0479, 0.0226, 0.009, 0.0049, 0.002, 0.0013, 0.0008, 0.0005, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], [0.1606, 0.2901, 0.2846, 0.1432, 0.0667, 0.0266, 0.0151, 0.0059, 0.0033, 0.002, 0.0008, 0.0006, 0.0004, 0.0, 0.0001, 0.0, 0.0, 0.0, 0.0, 0.0], [0.0174, 0.0658, 0.1505, 0.2437, 0.1858, 0.1184, 0.0788, 0.0502, 0.0327, 0.02, 0.016, 0.0083, 0.0052, 0.0028, 0.0026, 0.0009, 0.0007, 0.0002, 0.0, 0.0], [0.0139, 0.0564, 0.1186, 0.2175, 0.2163, 0.1286, 0.0856, 0.0566, 0.0409, 0.0234, 0.0159, 0.0107, 0.006, 0.0042, 0.0029, 0.0014, 0.0006, 0.0003, 0.0002, 0.0], [0.0007, 0.0067, 0.0217, 0.0588, 0.0946, 0.1262, 0.1161, 0.1088, 0.1037, 0.0828, 0.0682, 0.0573, 0.0493, 0.0363, 0.0276, 0.0184, 0.0108, 0.0081, 0.0031, 0.0008], [0.0006, 0.0044, 0.0103, 0.0352, 0.0647, 0.0873, 0.1011, 0.1062, 0.098, 0.0878, 0.0821, 0.0764, 0.0692, 0.056, 0.0422, 0.0337, 0.0236, 0.0143, 0.0056, 0.0013], [0.0003, 0.002, 0.0113, 0.0296, 0.0602, 0.0884, 0.0986, 0.0996, 0.098, 0.0927, 0.0859, 0.0772, 0.0677, 0.0548, 0.0467, 0.0326, 0.0259, 0.018, 0.0083, 0.0022], [0.0002, 0.0014, 0.0108, 0.0298, 0.0566, 0.0817, 0.0962, 0.1014, 0.097, 0.0921, 0.086, 0.0758, 0.0641, 0.0636, 0.0484, 0.0393, 0.0257, 0.0169, 0.0095, 0.0035], [0.0, 0.0017, 0.0062, 0.0233, 0.0488, 0.0692, 0.0836, 0.0909, 0.0906, 0.0954, 0.0913, 0.0872, 0.0776, 0.0676, 0.0554, 0.0407, 0.0323, 0.0228, 0.0115, 0.0039], [0.0002, 0.0018, 0.0068, 0.0208, 0.0431, 0.0631, 0.0738, 0.0885, 0.095, 0.094, 0.0857, 0.0927, 0.0781, 0.0688, 0.0602, 0.0467, 0.0378, 0.0221, 0.0152, 0.0056], [0.0002, 0.0015, 0.0051, 0.0188, 0.0422, 0.0655, 0.0757, 0.0818, 0.0842, 0.0859, 0.092, 0.0901, 0.0818, 0.0751, 0.0658, 0.0516, 0.0363, 0.0268, 0.0145, 0.0051], [0.0, 0.001, 0.0041, 0.0154, 0.0321, 0.0563, 0.0652, 0.0723, 0.0813, 0.0856, 0.0946, 0.0912, 0.0834, 0.0749, 0.071, 0.0623, 0.0473, 0.0329, 0.0204, 0.0087], [0.0001, 0.0001, 0.0016, 0.0053, 0.0127, 0.0238, 0.0391, 0.0475, 0.0528, 0.0702, 0.077, 0.0877, 0.0941, 0.0947, 0.095, 0.0927, 0.084, 0.059, 0.0439, 0.0187], [0.0, 0.0001, 0.0005, 0.0024, 0.0061, 0.0149, 0.0227, 0.0288, 0.0387, 0.0504, 0.0629, 0.0684, 0.0853, 0.0999, 0.1087, 0.1085, 0.1037, 0.0935, 0.0685, 0.036], [0.0, 0.0002, 0.0002, 0.0023, 0.007, 0.013, 0.0199, 0.0265, 0.0392, 0.0524, 0.0583, 0.0623, 0.0813, 0.0938, 0.0985, 0.1053, 0.1111, 0.1022, 0.0793, 0.0472], [0.0, 0.0, 0.0001, 0.0004, 0.0019, 0.0051, 0.0079, 0.0121, 0.0181, 0.024, 0.0328, 0.0422, 0.0546, 0.0724, 0.0961, 0.1107, 0.1338, 0.1426, 0.1501, 0.0951], [0.0, 0.0, 0.0, 0.0003, 0.0015, 0.0033, 0.0065, 0.0108, 0.0153, 0.0243, 0.0278, 0.0407, 0.0546, 0.0667, 0.0854, 0.117, 0.1307, 0.1542, 0.1546, 0.1063], [0.0, 0.0, 0.0, 0.0, 0.0006, 0.0016, 0.0036, 0.005, 0.007, 0.0111, 0.0167, 0.0219, 0.0324, 0.0483, 0.0634, 0.087, 0.1217, 0.166, 0.2165, 0.1972], [0.0, 0.0, 0.0, 0.0, 0.0001, 0.0002, 0.0004, 0.0015, 0.0021, 0.0042, 0.0052, 0.0088, 0.0149, 0.0201, 0.03, 0.0512, 0.074, 0.1201, 0.1988, 0.4684]]}, "metricas": {"test_temporadas": ["2324", "2425", "2526"], "n_test": 1140, "metricas": {"Poisson + Dixon-Coles": {"log_loss": 0.9805, "rps": 0.2003, "brier": 0.1949, "accuracy": 0.5386}, "Clasificador calibrado": {"log_loss": 0.9881, "rps": 0.2012, "brier": 0.1962, "accuracy": 0.5351}, "Ensemble 50/50": {"log_loss": 0.9825, "rps": 0.2004, "brier": 0.1952, "accuracy": 0.5307}, "Elo puro": {"log_loss": 0.9842, "rps": 0.2014, "brier": 0.1959, "accuracy": 0.5298}, "Mercado (cuotas medias)": {"log_loss": 0.965, "rps": 0.1955, "brier": 0.1913, "accuracy": 0.5421}, "Base (frecuencias)": {"log_loss": 1.0723, "rps": 0.2321, "brier": 0.2164, "accuracy": 0.4316}}, "modelo_elegido": "Poisson + Dixon-Coles", "rho": -0.09, "mae_goles": 0.9234, "hiperparametros_local": {"n_estimators": 300, "learning_rate": 0.02, "max_depth": 2, "min_child_weight": 10, "colsample_bytree": 0.3, "subsample": 0.7}, "hiperparametros_visitante": {"n_estimators": 300, "learning_rate": 0.02, "max_depth": 2, "min_child_weight": 10, "colsample_bytree": 0.3, "subsample": 0.7}, "fecha_entrenamiento": "2026-11-08"}};
+const pct = (v, d=0) => v == null || isNaN(v) ? '–' : (v*100 < 0.5 && v > 0 ? '<1 %' : (v*100).toFixed(d) + ' %');
+const el = (id) => document.getElementById(id);
+
+// Tema
+(() => { try { const t = localStorage.getItem('tema'); if (t) document.documentElement.dataset.theme = t; } catch(e){}
+  el('tema').onclick = () => { const r = document.documentElement;
+    const osc = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    r.dataset.theme = osc ? 'light' : 'dark'; try { localStorage.setItem('tema', r.dataset.theme); } catch(e){} }; })();
+
+// Pestañas
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.s));
+});
+
+const R = D.resumen, jornadas = Math.round(D.tabla.reduce((a, t) => a + t.PJ, 0) / D.tabla.length);
+el('sub').textContent = `Tras ${jornadas} jornadas · ${D.n_sims.toLocaleString('es')} temporadas simuladas · actualizado ${D.actualizado}`;
+el('sub-temp').textContent = 'Ordenado por puntos esperados. Rango de puntos = intervalo del 90 % de las simulaciones.';
+
+// KPIs
+const top = (k) => [...R].sort((a, b) => b[k] - a[k]);
+const desc = top('P_Descenso').slice(0, 3);
+el('kpis').innerHTML = [
+  ['Favorito al título', top('P_Campeón')[0].Equipo, pct(top('P_Campeón')[0]['P_Campeón']) + ' de probabilidad'],
+  ['Segundo candidato', top('P_Campeón')[1].Equipo, pct(top('P_Campeón')[1]['P_Campeón'])],
+  ['Más cerca del descenso', desc[0].Equipo, pct(desc[0].P_Descenso)],
+  ['Puntos del campeón (media)', Math.round(Math.max(...R.map(r => r.Pts_esperados))) + ' pts', 'equipo con más puntos esperados'],
+].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+
+// Tabla resumen
+const bar = (v) => `<td class="bar"><span style="width:${Math.min(100, v*100)}%"></span><b>${pct(v)}</b></td>`;
+el('t-resumen').innerHTML = `<thead><tr><th class="n">#</th><th class="t">Equipo</th><th>Pts</th><th>Pts esp.</th><th>Rango 90 %</th>
+  <th>Campeón</th><th>Top 4</th><th>Top 5 (UCL)</th><th>Europa</th><th>Descenso</th></tr></thead><tbody>` +
+  R.map((r, i) => `<tr class="${i < 5 ? 'z-ucl' : i >= R.length - 3 ? 'z-desc' : ''}"><td class="n">${i+1}</td><td class="t">${r.Equipo}</td>
+  <td>${r.Pts_actuales}</td><td><b>${r.Pts_esperados.toFixed(1)}</b></td><td>${Math.round(r.Pts_p5)}–${Math.round(r.Pts_p95)}</td>
+  ${bar(r['P_Campeón'])}${bar(r['P_Top 4'])}${bar(r['P_Top 5 (UCL)'])}${bar(r['P_Top 7 (Europa)'])}${bar(r.P_Descenso)}</tr>`).join('') + '</tbody>';
+
+// Heatmap posiciones
+const P = D.posiciones, nT = P.equipos.length;
+el('t-heat').innerHTML = `<thead><tr><th class="t">Equipo</th>${[...Array(nT)].map((_, i) => `<th>${i+1}</th>`).join('')}</tr></thead><tbody>` +
+  P.equipos.map((e, i) => `<tr><td class="t" style="padding:0 8px;font-size:13px">${e}</td>` + P.matriz[i].map(v => {
+    const a = Math.min(1, Math.sqrt(v) * 1.15);
+    return `<td style="background:rgba(var(--heat),${a.toFixed(3)});color:${a > .55 ? 'var(--bg)' : 'var(--ink)'}" title="${e}: ${pct(v,1)}">${v >= 0.01 ? Math.round(v*100) : ''}</td>`;
+  }).join('') + '</tr>').join('') + '</tbody>';
+
+// Próxima jornada
+if (!D.jornada.length) {
+  el('partidos').innerHTML = '<div class="card vacio">Todavía no hay partidos publicados para la próxima jornada (puede ser parón internacional). La web se actualiza a diario.</div>';
+} else {
+  el('partidos').innerHTML = '<div class="partidos">' + D.jornada.map(p => {
+    const v = [p.Valor_1, p.Valor_X, p.Valor_2], ml = ['1', 'X', '2'];
+    const mx = v.every(x => x == null) ? null : v.indexOf(Math.max(...v));
+    const valor = mx == null ? '' : `<span>Mayor diferencia vs mercado: <b class="${v[mx] > 0 ? 'pos' : 'neg'}">${ml[mx]} ${v[mx] > 0 ? '+' : ''}${(v[mx]*100).toFixed(1)} pp</b></span>`;
+    return `<div class="p"><div class="f">${p.Fecha}${p.Hora ? ' · ' + p.Hora : ''}</div>
+      <div class="eq"><span>${p.Local}</span><span>${p.Visitante}</span></div>
+      <div class="tri"><div class="a" style="flex:${p.Prob_1}">${pct(p.Prob_1)}</div><div class="x" style="flex:${p.Prob_X}">${pct(p.Prob_X)}</div><div class="b" style="flex:${p.Prob_2}">${pct(p.Prob_2)}</div></div>
+      <div class="meta"><span>xG ${p.xG_Local.toFixed(2)} – ${p.xG_Visitante.toFixed(2)}</span><span>Marcador: <b>${p.Marcador_probable}</b></span>
+      <span>+2.5: ${pct(p.Prob_Over25)}</span><span>Ambos marcan: ${pct(p.Prob_BTTS)}</span></div>
+      ${p.Mercado_1 != null ? `<div class="meta"><span>Mercado: ${pct(p.Mercado_1)} / ${pct(p.Mercado_X)} / ${pct(p.Mercado_2)}</span>${valor}</div>` : ''}</div>`;
+  }).join('') + '</div>';
+}
+
+// Clasificación actual
+el('t-clasif').innerHTML = '<thead><tr><th class="n">#</th><th class="t">Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts</th></tr></thead><tbody>' +
+  D.tabla.map(t => `<tr><td class="n">${t.Pos}</td><td class="t">${t.Equipo}</td><td>${t.PJ}</td><td>${t.G}</td><td>${t.E}</td><td>${t.P}</td><td>${t.GF}</td><td>${t.GC}</td><td>${t.DG > 0 ? '+' : ''}${t.DG}</td><td><b>${t.Pts}</b></td></tr>`).join('') + '</tbody>';
+
+// Métricas
+const M = D.metricas;
+el('sub-mod').textContent = `Test: temporadas ${M.test_temporadas.map(t => '20' + t.slice(0,2) + '‑' + t.slice(2)).join(', ')} (${M.n_test} partidos). Modelo en producción: ${M.modelo_elegido}. Menor es mejor salvo en el acierto.`;
+el('t-met').innerHTML = '<thead><tr><th class="t">Modelo</th><th>Log‑loss</th><th>RPS</th><th>Brier</th><th>Acierto</th></tr></thead><tbody>' +
+  Object.entries(M.metricas).map(([k, m]) => `<tr${k === M.modelo_elegido ? ' style="font-weight:650"' : ''}><td class="t">${k}</td><td>${m.log_loss.toFixed(4)}</td><td>${m.rps.toFixed(4)}</td><td>${m.brier.toFixed(4)}</td><td>${pct(m.accuracy, 1)}</td></tr>`).join('') + '</tbody>';
+</script>
+</body>
+</html>

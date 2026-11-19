@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pkl
+modelos/
+# Se regenera en cada ejecución (~20 MB)
+Data/datos_historicos.csv

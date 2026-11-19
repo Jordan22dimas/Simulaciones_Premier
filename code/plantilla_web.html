@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulaciones Premier</title>
+<meta name="description" content="Predicciones y Monte Carlo de la Premier League 2026-27 con XGBoost + Dixon-Coles">
+<style>
+:root{
+  --bg:#f7f7f5; --surface:#ffffff; --ink:#1a1a1a; --muted:#6b6b6b; --line:#e4e4e0;
+  --accent:#3d1a6e; --accent-soft:#ece6f5; --good:#1f7a4d; --bad:#b3261e; --warn:#a86b00;
+  --heat:61,26,110;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121214; --surface:#1c1c1f; --ink:#ececec; --muted:#9a9aa0; --line:#2c2c31;
+    --accent:#c9b3f0; --accent-soft:#2b2340; --good:#5cc994; --bad:#ff8a80; --warn:#f0b54a;
+    --heat:201,179,240;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121214; --surface:#1c1c1f; --ink:#ececec; --muted:#9a9aa0; --line:#2c2c31;
+  --accent:#c9b3f0; --accent-soft:#2b2340; --good:#5cc994; --bad:#ff8a80; --warn:#f0b54a;
+  --heat:201,179,240;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1100px;margin:0 auto;padding:32px 16px 64px}
+header h1{font-size:28px;margin:0 0 4px;letter-spacing:-.02em}
+header p{margin:0;color:var(--muted)}
+nav{display:flex;gap:4px;margin:24px 0 16px;flex-wrap:wrap}
+nav button{border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:8px 14px;border-radius:999px;font:inherit;cursor:pointer}
+nav button[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--bg)}
+section{display:none} section.on{display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.card h2{font-size:17px;margin:0 0 4px} .card .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.kpi .l{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font-size:22px;font-weight:650;margin-top:4px} .kpi .d{color:var(--muted);font-size:13px}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--line)}
+th{font-size:12px;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface)}
+td.t,th.t{text-align:left} td.n{color:var(--muted);width:28px}
+tr:last-child td{border-bottom:0}
+.bar{position:relative;min-width:84px}
+.bar span{position:absolute;left:0;top:5px;bottom:5px;background:var(--accent-soft);border-radius:3px}
+.bar b{position:relative;font-weight:500}
+.z-ucl td:first-child{box-shadow:inset 3px 0 var(--good)} .z-desc td:first-child{box-shadow:inset 3px 0 var(--bad)}
+.heat td{padding:0;width:34px;height:26px;text-align:center;font-size:11px;border:1px solid var(--surface)}
+.heat th{font-size:11px;padding:4px 2px;text-align:center}
+.partidos{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.p{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px}
+.p .f{color:var(--muted);font-size:12px} .p .eq{display:flex;justify-content:space-between;font-weight:600;margin:6px 0 10px}
+.tri{display:flex;height:28px;border-radius:6px;overflow:hidden;font-size:12px;font-weight:600}
+.tri div{display:flex;align-items:center;justify-content:center;color:#fff;min-width:24px}
+.tri .a{background:#3d1a6e}.tri .x{background:#8a8a8a}.tri .b{background:#c25b1f}
+.p .meta{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:10px;gap:8px;flex-wrap:wrap}
+.vacio{color:var(--muted);padding:24px;text-align:center}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+footer{color:var(--muted);font-size:13px;margin-top:32px}
+.tema{float:right;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}
+ul.m{padding-left:18px;margin:0} ul.m li{margin:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <button class="tema" id="tema" aria-label="Cambiar tema">◐</button>
+  <h1>Simulaciones Premier League 2026‑27</h1>
+  <p id="sub"></p>
+</header>
+<nav role="tablist">
+  <button role="tab" data-s="temporada" aria-selected="true">Temporada</button>
+  <button role="tab" data-s="jornada">Próxima jornada</button>
+  <button role="tab" data-s="posiciones">Posiciones</button>
+  <button role="tab" data-s="clasif">Clasificación</button>
+  <button role="tab" data-s="modelo">Modelo</button>
+</nav>
+
+<section id="temporada" class="on">
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h2>Probabilidades a final de temporada</h2>
+    <p class="sub" id="sub-temp"></p>
+    <div class="scroll"><table id="t-resumen"></table></div></div>
+</section>
+<section id="jornada"><div id="partidos"></div></section>
+<section id="posiciones"><div class="card"><h2>Probabilidad de cada posición final</h2>
+  <p class="sub">Cada fila suma 100 %. Cuanto más intenso el color, más probable.</p>
+  <div class="scroll"><table class="heat" id="t-heat"></table></div></div></section>
+<section id="clasif"><div class="card"><h2>Clasificación actual</h2><p class="sub">Datos reales de football-data.co.uk</p>
+  <div class="scroll"><table id="t-clasif"></table></div></div></section>
+<section id="modelo">
+  <div class="card"><h2>Rendimiento fuera de muestra</h2><p class="sub" id="sub-mod"></p>
+    <div class="scroll"><table id="t-met"></table></div></div>
+  <div class="card"><h2>Cómo funciona</h2><ul class="m">
+    <li><b>Datos:</b> Premier y Championship desde 2005‑06 (football-data.co.uk). xG real cuando existe; si no, xG estimado a partir de remates.</li>
+    <li><b>Variables:</b> Elo propio, medias móviles (3, 5 y 10 partidos y exponencial), forma de la temporada, forma en casa/fuera, H2H y % de partidos recientes en Championship (ascendidos).</li>
+    <li><b>Modelo:</b> dos XGBoost Tweedie predicen los goles esperados → matriz Poisson con corrección Dixon‑Coles. Un clasificador 1X2 calibrado compite con él; se queda el de menor log‑loss.</li>
+    <li><b>Monte Carlo:</b> se simula el resto de la temporada partido a partido. Cada simulación añade un shock aleatorio de fuerza por equipo para no ser sobreconfiados.</li>
+    <li><b>Benchmark:</b> las cuotas de las casas de apuestas. Superarlas es muy difícil; quedarse cerca ya indica un modelo bien calibrado.</li>
+  </ul></div>
+</section>
+<footer>Proyecto educativo · No es consejo de apuestas.</footer>
+</div>
+<script>
+const D = /*__DATOS__*/null;
+const pct = (v, d=0) => v == null || isNaN(v) ? '–' : (v*100 < 0.5 && v > 0 ? '<1 %' : (v*100).toFixed(d) + ' %');
+const el = (id) => document.getElementById(id);
+
+// Tema
+(() => { try { const t = localStorage.getItem('tema'); if (t) document.documentElement.dataset.theme = t; } catch(e){}
+  el('tema').onclick = () => { const r = document.documentElement;
+    const osc = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    r.dataset.theme = osc ? 'light' : 'dark'; try { localStorage.setItem('tema', r.dataset.theme); } catch(e){} }; })();
+
+// Pestañas
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.s));
+});
+
+const R = D.resumen, jornadas = Math.round(D.tabla.reduce((a, t) => a + t.PJ, 0) / D.tabla.length);
+el('sub').textContent = `Tras ${jornadas} jornadas · ${D.n_sims.toLocaleString('es')} temporadas simuladas · actualizado ${D.actualizado}`;
+el('sub-temp').textContent = 'Ordenado por puntos esperados. Rango de puntos = intervalo del 90 % de las simulaciones.';
+
+// KPIs
+const top = (k) => [...R].sort((a, b) => b[k] - a[k]);
+const desc = top('P_Descenso').slice(0, 3);
+el('kpis').innerHTML = [
+  ['Favorito al título', top('P_Campeón')[0].Equipo, pct(top('P_Campeón')[0]['P_Campeón']) + ' de probabilidad'],
+  ['Segundo candidato', top('P_Campeón')[1].Equipo, pct(top('P_Campeón')[1]['P_Campeón'])],
+  ['Más cerca del descenso', desc[0].Equipo, pct(desc[0].P_Descenso)],
+  ['Puntos del campeón (media)', Math.round(Math.max(...R.map(r => r.Pts_esperados))) + ' pts', 'equipo con más puntos esperados'],
+].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+
+// Tabla resumen
+const bar = (v) => `<td class="bar"><span style="width:${Math.min(100, v*100)}%"></span><b>${pct(v)}</b></td>`;
+el('t-resumen').innerHTML = `<thead><tr><th class="n">#</th><th class="t">Equipo</th><th>Pts</th><th>Pts esp.</th><th>Rango 90 %</th>
+  <th>Campeón</th><th>Top 4</th><th>Top 5 (UCL)</th><th>Europa</th><th>Descenso</th></tr></thead><tbody>` +
+  R.map((r, i) => `<tr class="${i < 5 ? 'z-ucl' : i >= R.length - 3 ? 'z-desc' : ''}"><td class="n">${i+1}</td><td class="t">${r.Equipo}</td>
+  <td>${r.Pts_actuales}</td><td><b>${r.Pts_esperados.toFixed(1)}</b></td><td>${Math.round(r.Pts_p5)}–${Math.round(r.Pts_p95)}</td>
+  ${bar(r['P_Campeón'])}${bar(r['P_Top 4'])}${bar(r['P_Top 5 (UCL)'])}${bar(r['P_Top 7 (Europa)'])}${bar(r.P_Descenso)}</tr>`).join('') + '</tbody>';
+
+// Heatmap posiciones
+const P = D.posiciones, nT = P.equipos.length;
+el('t-heat').innerHTML = `<thead><tr><th class="t">Equipo</th>${[...Array(nT)].map((_, i) => `<th>${i+1}</th>`).join('')}</tr></thead><tbody>` +
+  P.equipos.map((e, i) => `<tr><td class="t" style="padding:0 8px;font-size:13px">${e}</td>` + P.matriz[i].map(v => {
+    const a = Math.min(1, Math.sqrt(v) * 1.15);
+    return `<td style="background:rgba(var(--heat),${a.toFixed(3)});color:${a > .55 ? 'var(--bg)' : 'var(--ink)'}" title="${e}: ${pct(v,1)}">${v >= 0.01 ? Math.round(v*100) : ''}</td>`;
+  }).join('') + '</tr>').join('') + '</tbody>';
+
+// Próxima jornada
+if (!D.jornada.length) {
+  el('partidos').innerHTML = '<div class="card vacio">Todavía no hay partidos publicados para la próxima jornada (puede ser parón internacional). La web se actualiza a diario.</div>';
+} else {
+  el('partidos').innerHTML = '<div class="partidos">' + D.jornada.map(p => {
+    const v = [p.Valor_1, p.Valor_X, p.Valor_2], ml = ['1', 'X', '2'];
+    const mx = v.every(x => x == null) ? null : v.indexOf(Math.max(...v));
+    const valor = mx == null ? '' : `<span>Mayor diferencia vs mercado: <b class="${v[mx] > 0 ? 'pos' : 'neg'}">${ml[mx]} ${v[mx] > 0 ? '+' : ''}${(v[mx]*100).toFixed(1)} pp</b></span>`;
+    return `<div class="p"><div class="f">${p.Fecha}${p.Hora ? ' · ' + p.Hora : ''}</div>
+      <div class="eq"><span>${p.Local}</span><span>${p.Visitante}</span></div>
+      <div class="tri"><div class="a" style="flex:${p.Prob_1}">${pct(p.Prob_1)}</div><div class="x" style="flex:${p.Prob_X}">${pct(p.Prob_X)}</div><div class="b" style="flex:${p.Prob_2}">${pct(p.Prob_2)}</div></div>
+      <div class="meta"><span>xG ${p.xG_Local.toFixed(2)} – ${p.xG_Visitante.toFixed(2)}</span><span>Marcador: <b>${p.Marcador_probable}</b></span>
+      <span>+2.5: ${pct(p.Prob_Over25)}</span><span>Ambos marcan: ${pct(p.Prob_BTTS)}</span></div>
+      ${p.Mercado_1 != null ? `<div class="meta"><span>Mercado: ${pct(p.Mercado_1)} / ${pct(p.Mercado_X)} / ${pct(p.Mercado_2)}</span>${valor}</div>` : ''}</div>`;
+  }).join('') + '</div>';
+}
+
+// Clasificación actual
+el('t-clasif').innerHTML = '<thead><tr><th class="n">#</th><th class="t">Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts</th></tr></thead><tbody>' +
+  D.tabla.map(t => `<tr><td class="n">${t.Pos}</td><td class="t">${t.Equipo}</td><td>${t.PJ}</td><td>${t.G}</td><td>${t.E}</td><td>${t.P}</td><td>${t.GF}</td><td>${t.GC}</td><td>${t.DG > 0 ? '+' : ''}${t.DG}</td><td><b>${t.Pts}</b></td></tr>`).join('') + '</tbody>';
+
+// Métricas
+const M = D.metricas;
+el('sub-mod').textContent = `Test: temporadas ${M.test_temporadas.map(t => '20' + t.slice(0,2) + '‑' + t.slice(2)).join(', ')} (${M.n_test} partidos). Modelo en producción: ${M.modelo_elegido}. Menor es mejor salvo en el acierto.`;
+el('t-met').innerHTML = '<thead><tr><th class="t">Modelo</th><th>Log‑loss</th><th>RPS</th><th>Brier</th><th>Acierto</th></tr></thead><tbody>' +
+  Object.entries(M.metricas).map(([k, m]) => `<tr${k === M.modelo_elegido ? ' style="font-weight:650"' : ''}><td class="t">${k}</td><td>${m.log_loss.toFixed(4)}</td><td>${m.rps.toFixed(4)}</td><td>${m.brier.toFixed(4)}</td><td>${pct(m.accuracy, 1)}</td></tr>`).join('') + '</tbody>';
+</script>
+</body>
+</html>
