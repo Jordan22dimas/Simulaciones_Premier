@@ -138,6 +138,11 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === b.dataset.s));
 });
 
+if (!D) {
+  document.querySelector('.wrap').insertAdjacentHTML('beforeend', '<div class="card vacio">Esta es la <b>plantilla</b> sin datos. ' +
+    'Abre <b>docs/index.html</b> (la genera <code>python code/Generar_Web.py</code>) o la web publicada en GitHub Pages.</div>');
+  throw new Error('Plantilla sin datos');
+}
 const R = D.resumen, jornadas = Math.round(D.tabla.reduce((a, t) => a + t.PJ, 0) / D.tabla.length);
 el('sub').textContent = `Tras ${jornadas} jornadas · ${D.n_sims.toLocaleString('es')} temporadas simuladas · actualizado ${D.actualizado}`;
 el('sub-temp').textContent = 'Ordenado por puntos esperados. Rango de puntos = intervalo del 90 % de las simulaciones.';
