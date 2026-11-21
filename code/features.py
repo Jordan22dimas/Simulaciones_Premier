@@ -223,3 +223,36 @@ def probs_mercado(h, d, a):
     """Probabilidades implícitas sin margen (normalización proporcional)."""
     inv = np.c_[1 / h, 1 / d, 1 / a]
     return inv / inv.sum(axis=1, keepdims=True)
+
+
+def prob_over_mercado(over, under):
+    """P(más de 2,5 goles) implícita sin margen."""
+    inv = np.c_[1 / np.asarray(over, float), 1 / np.asarray(under, float)]
+    return inv[:, 0] / inv.sum(axis=1)
+
+
+def goles_mercado(p1x2, p_over, max_goles=10):
+    """
+    Goles esperados (λ local, λ visitante) implícitos en las cuotas: busca el par de Poisson
+    independientes cuyo P(1), P(2) y P(+2,5) más se parecen a los del mercado.
+    """
+    from scipy.optimize import minimize
+    from scipy.stats import poisson
+    g = np.arange(max_goles + 1)
+    gl, gv = np.meshgrid(g, g, indexing='ij')
+    gana_l, gana_v, over = gl > gv, gl < gv, (gl + gv) > 2.5
+
+    def probs(log_lam):
+        lam_l, lam_v = np.exp(log_lam)
+        M = np.outer(poisson.pmf(g, lam_l), poisson.pmf(g, lam_v))
+        return np.array([M[gana_l].sum(), M[gana_v].sum(), M[over].sum()])
+
+    salida = np.full((len(p_over), 2), np.nan)
+    for i, (p, po) in enumerate(zip(np.asarray(p1x2), np.asarray(p_over))):
+        if np.isnan(p).any() or np.isnan(po):
+            continue
+        objetivo = np.array([p[0], p[2], po])
+        r = minimize(lambda x: np.sum((probs(x) - objetivo) ** 2), x0=np.log([1.5, 1.2]), method='Nelder-Mead',
+                     options={'xatol': 1e-5, 'fatol': 1e-10})
+        salida[i] = np.exp(r.x)
+    return salida

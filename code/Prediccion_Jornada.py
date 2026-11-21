@@ -13,7 +13,8 @@ from Modelo import predecir
 
 COLUMNAS = ['Fecha', 'Hora', 'Local', 'Visitante', 'Prob_1', 'Prob_X', 'Prob_2', 'xG_Local', 'xG_Visitante',
             'Marcador_probable', 'Prob_marcador', 'Prob_Over25', 'Prob_BTTS',
-            'Mercado_1', 'Mercado_X', 'Mercado_2', 'Valor_1', 'Valor_X', 'Valor_2']
+            'Mercado_1', 'Mercado_X', 'Mercado_2', 'Valor_1', 'Valor_X', 'Valor_2',
+            'Mercado_Over25', 'Valor_Over25', 'Mercado_xG_Local', 'Mercado_xG_Visitante', 'Hándicap_asiático']
 
 
 def main():
@@ -51,6 +52,13 @@ def main():
         pm = F.probs_mercado(fx.AvgH.values, fx.AvgD.values, fx.AvgA.values)
         out[['Mercado_1', 'Mercado_X', 'Mercado_2']] = pm
         out[['Valor_1', 'Valor_X', 'Valor_2']] = p - pm
+        if {'Avg>2.5', 'Avg<2.5'} <= set(fx.columns):
+            po = F.prob_over_mercado(fx['Avg>2.5'], fx['Avg<2.5'])
+            out['Mercado_Over25'] = po
+            out['Valor_Over25'] = over - po
+            out[['Mercado_xG_Local', 'Mercado_xG_Visitante']] = F.goles_mercado(pm, po)
+        if 'AHh' in fx.columns:
+            out['Hándicap_asiático'] = fx['AHh'].values
     out = out.reindex(columns=COLUMNAS).round(4)
     out.to_csv(salida, index=False, encoding='utf-8-sig')
     print(out[['Fecha', 'Local', 'Visitante', 'Prob_1', 'Prob_X', 'Prob_2', 'Marcador_probable', 'Mercado_1']].to_string(index=False))

@@ -34,20 +34,63 @@ def conectar():
 
 def recoger_urls(driver, temporada=None):
     """Abre la página de resultados, pulsa 'Mostrar más partidos' hasta el final y devuelve las URLs."""
-    driver.get(BASE.format(sufijo=f'-{temporada}' if temporada else ''))
+    url_resultados = BASE.format(sufijo=f'-{temporada}' if temporada else '')
+    print(f'Abriendo {url_resultados} ...', flush=True)
+    driver.get(url_resultados)
     time.sleep(4)
-    while True:
-        botones = driver.find_elements(By.XPATH, "//*[contains(text(),'Mostrar más partidos')]")
-        if not botones:
-            break
+
+    # Banner de cookies (OneTrust): si aparece, se acepta para que no tape la página
+    for b in driver.find_elements(By.ID, 'onetrust-accept-btn-handler'):
         try:
-            driver.execute_script('arguments[0].click();', botones[0])
-            time.sleep(random.uniform(2, 3.5))
+            b.click(); time.sleep(1)
         except Exception:
-            break
+            pass
+
+    contar = lambda: len(driver.find_elements(By.CSS_SELECTOR, "a[href*='/partido/futbol/']"))
+    n = contar()
+    print(f'  {n} partidos visibles', flush=True)
+    fallos_seguidos = 0
+    for intento in range(60):                      # límite de seguridad (60 clics ≈ 1.500 partidos)
+        botones = [b for b in driver.find_elements(By.XPATH, "//*[contains(text(),'Mostrar más partidos')]")
+                   if b.is_displayed()]
+        if not botones:
+            # el botón puede tardar en reaparecer tras cargar un bloque: se comprueba otra vez
+            time.sleep(3)
+            botones = [b for b in driver.find_elements(By.XPATH, "//*[contains(text(),'Mostrar más partidos')]")
+                       if b.is_displayed()]
+            if not botones:
+                print('  No hay más botón "Mostrar más partidos": lista completa', flush=True)
+                break
+        try:
+            driver.execute_script('arguments[0].scrollIntoView({block: "center"}); arguments[0].click();', botones[0])
+        except Exception as e:
+            print(f'  No se pudo pulsar el botón ({e.__class__.__name__}); reintento', flush=True)
+        # Espera hasta 15 s a que aparezcan partidos nuevos (las temporadas antiguas cargan lento)
+        nuevo = n
+        for _ in range(15):
+            time.sleep(1)
+            nuevo = contar()
+            if nuevo > n:
+                time.sleep(1)                      # deja terminar de pintar el bloque
+                nuevo = contar()
+                break
+        print(f'  Clic {intento + 1}: {nuevo} partidos visibles', flush=True)
+        if nuevo <= n:
+            fallos_seguidos += 1
+            if fallos_seguidos >= 3:               # 3 clics seguidos sin cargar nada → fin
+                print('  Tres clics sin partidos nuevos: doy la lista por completa', flush=True)
+                break
+        else:
+            fallos_seguidos = 0
+            n = nuevo
+        time.sleep(random.uniform(1, 2))
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     urls = []
-    for a in soup.select("a[href*='/partido/']"):
+    # Solo fútbol y, si es posible, solo las filas de la lista de resultados (no los widgets laterales
+    # de "destacados", que traen tenis, baloncesto u otras ligas)
+    enlaces = soup.select("[class*='event__match'] a[href*='/partido/futbol/']") \
+        or soup.select("a[href*='/partido/futbol/']")
+    for a in enlaces:
         href = a['href'].split('?')[0].rstrip('/')
         if href.startswith('/'):
             href = 'https://www.flashscore.es' + href
@@ -77,7 +120,10 @@ def extraer_partido(url, driver):
         hijos = div.find_all('div', recursive=False)
         if len(hijos) == 3:
             l, cat, v = (h.text.strip() for h in hijos)
-            if l and cat and v and any(c.isalpha() for c in cat) and len(cat) < 30:
+            # el nombre de la estadística no puede llevar números (evita filas como
+            # "2.18xGOT enfrentados0.30", que crearían una columna nueva por partido)
+            if l and cat and v and any(c.isalpha() for c in cat) and not any(c.isdigit() for c in cat) \
+                    and len(cat) < 30:
                 col = cat.replace(' ', '_')
                 datos[f'{col}_Local'], datos[f'{col}_Visitante'] = l, v
     return datos
@@ -88,24 +134,36 @@ def main():
     previo = pd.read_csv(C.RUTA_FLASHSCORE, encoding='utf-8-sig') if os.path.exists(C.RUTA_FLASHSCORE) else pd.DataFrame()
     hechas = set(previo['URL']) if 'URL' in previo else set()
 
+    print('Conectando con Chrome en el puerto 9222...', flush=True)
     driver = conectar()
+    print(f'  Conectado. Ya guardados previamente: {len(hechas)} partidos', flush=True)
     urls = [u for u in recoger_urls(driver, temporada) if u not in hechas]
     print(f'{len(urls)} partidos nuevos por descargar')
     nuevos = []
-    for i, url in enumerate(urls, 1):
-        print(f'[{i}/{len(urls)}] {url}')
-        try:
-            d = extraer_partido(url, driver)
-            if d['Equipo_Local']:
-                nuevos.append(d)
-        except Exception as e:
-            print(f'  ! {e}')
-        if i % 20 == 0 and nuevos:   # guardado parcial
-            pd.concat([previo, pd.DataFrame(nuevos)]).to_csv(C.RUTA_FLASHSCORE, index=False, encoding='utf-8-sig')
-        time.sleep(random.uniform(3, 6))   # pausa de cortesía
-    if nuevos:
-        pd.concat([previo, pd.DataFrame(nuevos)]).to_csv(C.RUTA_FLASHSCORE, index=False, encoding='utf-8-sig')
-    print(f'→ {C.RUTA_FLASHSCORE}: {len(previo) + len(nuevos)} partidos')
+    guardar = lambda: nuevos and pd.concat([previo, pd.DataFrame(nuevos)]).to_csv(
+        C.RUTA_FLASHSCORE, index=False, encoding='utf-8-sig')
+    try:
+        for i, url in enumerate(urls, 1):
+            print(f'[{i}/{len(urls)}] {url}', flush=True)
+            try:
+                d = extraer_partido(url, driver)
+                if d['Equipo_Local']:
+                    nuevos.append(d)
+            except Exception as e:
+                msg = str(e).split('\n')[0]
+                if 'invalid session' in msg or 'disconnected' in msg or 'no such window' in msg:
+                    print('\n  ✖ Se ha perdido la conexión con Chrome (ventana cerrada o colgada).')
+                    print('    Vuelve a abrir Chrome en el puerto 9222 y relanza: continuará donde lo dejó.')
+                    break
+                print(f'  ! {msg}')
+            if i % 10 == 0:          # guardado parcial
+                guardar()
+            time.sleep(random.uniform(3, 6))   # pausa de cortesía
+    except KeyboardInterrupt:
+        print('\n  Detenido con Ctrl+C. Guardando lo descargado...')
+    finally:
+        guardar()
+        print(f'→ {C.RUTA_FLASHSCORE}: {len(previo) + len(nuevos)} partidos guardados en total')
 
 
 if __name__ == '__main__':

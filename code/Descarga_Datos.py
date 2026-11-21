@@ -16,6 +16,8 @@ COLUMNAS = [
     # cuotas medias (pre-partido y cierre) → solo benchmark
     'AvgH', 'AvgD', 'AvgA', 'AvgCH', 'AvgCD', 'AvgCA', 'BbAvH', 'BbAvD', 'BbAvA',
     'B365H', 'B365D', 'B365A',
+    # mercado de goles: más/menos de 2,5 y hándicap asiático → goles esperados implícitos (benchmark)
+    'Avg>2.5', 'Avg<2.5', 'AHh', 'AvgAHH', 'AvgAHA',
 ]
 
 SESION = requests.Session()
@@ -69,8 +71,9 @@ def main():
         fx = descargar_csv(C.URL_FIXTURES)
         fx = fx[fx['Div'] == 'E0'].copy()
         fx['Fecha'] = pd.to_datetime(fx['Date'], dayfirst=True, format='mixed')
-        keep = ['Fecha', 'Time', 'HomeTeam', 'AwayTeam', 'AvgH', 'AvgD', 'AvgA', 'B365H', 'B365D', 'B365A']
-        fx = fx[[c for c in keep if c in fx.columns]]
+        keep = ['Fecha', 'Time', 'HomeTeam', 'AwayTeam', 'AvgH', 'AvgD', 'AvgA', 'B365H', 'B365D', 'B365A',
+                'Avg>2.5', 'Avg<2.5', 'AHh', 'AvgAHH', 'AvgAHA']
+        fx =fx[[c for c in keep if c in fx.columns]]
         fx.to_csv(C.RUTA_PROXIMOS, index=False, encoding='utf-8-sig')
         print(f'→ {C.RUTA_PROXIMOS}: {len(fx)} próximos partidos')
     except Exception as e:

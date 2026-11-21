@@ -12,7 +12,7 @@ Todo el código está en [`code/`](code/). Si ejecutas `python code/Pipeline.py`
 Descarga los CSV de **football-data.co.uk** de Premier (E0) y Championship (E1) desde 2005‑06: resultados, remates, remates a puerta, córners, faltas, tarjetas, árbitro, **xG** (disponible desde 2026‑27) y **cuotas** de las casas de apuestas. No hace falta scraping. Las temporadas cerradas se cachean en [`Data/raw/`](Data/raw/).
 
 ### 1️⃣b (Opcional) FlashScore — [`code/Scrapper_FlashScore.py`](code/Scrapper_FlashScore.py)
-Es el scraper Selenium del Mundial adaptado a la Premier: recoge el xG real, la posesión, los pases y las grandes ocasiones de temporadas pasadas. Es incremental. La limpieza integra automáticamente el xG real en los partidos que lo tengan.
+Es el scraper Selenium del Mundial adaptado a la Premier: recoge el xG real, la posesión, los pases y las grandes ocasiones de temporadas pasadas. Es incremental. La limpieza integra automáticamente el xG real en los partidos que lo tengan. Ya están descargadas las temporadas 2021‑22 a 2026‑27 (2.000 partidos). FlashScore solo publica xG desde mediados de la 2022‑23, así que 1.389 de ellos aportan xG real.
 
 ### 2️⃣ Limpieza y variables — [`code/Data_Cleaning.py`](code/Data_Cleaning.py) + [`code/features.py`](code/features.py)
 * **xG estimado** para las temporadas sin xG: `xG ≈ 0,19·remates_a_puerta + 0,07·remates_fuera`, ajustado sobre los partidos que sí tienen xG real.
@@ -33,8 +33,8 @@ Es el scraper Selenium del Mundial adaptado a la Premier: recoge el xG real, la 
 
 | Modelo | Log‑loss | RPS | Acierto |
 |---|---|---|---|
-| **Poisson + Dixon‑Coles (producción)** | **0,9805** | **0,2003** | **53,9 %** |
-| Clasificador calibrado | 0,9881 | 0,2012 | 53,5 % |
+| **Poisson + Dixon‑Coles (producción)** | **0,9840** | **0,2013** | **53,0 %** |
+| Clasificador calibrado | 0,9920 | 0,2022 | 53,3 % |
 | Elo puro | 0,9842 | 0,2014 | 53,0 % |
 | Mercado (cuotas medias) | 0,9650 | 0,1955 | 54,2 % |
 | Base (frecuencias) | 1,0723 | 0,2321 | 43,2 % |
@@ -48,7 +48,22 @@ Parte de la **clasificación real** y simula 10.000 veces los partidos pendiente
 * Desempates: puntos → DG → GF.
 
 ### 5️⃣ Próxima jornada — [`code/Prediccion_Jornada.py`](code/Prediccion_Jornada.py)
-Para cada partido calcula el 1X2, los goles esperados, el marcador más probable, la probabilidad de +2,5 goles y de que marquen ambos, y la **diferencia frente al mercado**.
+Para cada partido calcula el 1X2, los goles esperados, el marcador más probable, la probabilidad de +2,5 goles y de que marquen ambos, y la **diferencia frente al mercado**: en el 1X2, en el más de 2,5 goles y en los goles esperados implícitos en las cuotas.
+
+### 6️⃣ Backtest de la temporada en curso — [`code/Backtest_Temporada.py`](code/Backtest_Temporada.py)
+Responde a la pregunta *¿qué habría predicho el modelo en cada jornada ya jugada?* Entrena solo con temporadas anteriores y predice cada partido con la información disponible justo antes de jugarse. Después compara los goles esperados con los goles reales, con el xG real y con los **goles implícitos en las cuotas** (1X2 + más/menos de 2,5). Con `--walk-forward` se reentrena antes de cada jornada, igual que el robot diario.
+
+Jornadas 1 a 10 de la 2026‑27 (100 partidos, modelo congelado de pretemporada):
+
+| | Modelo | Mercado | Media de la liga |
+|---|---|---|---|
+| Goles totales (reales: 273) | **282** | 294 | — |
+| Error medio de goles por equipo (MAE) | **0,940** | 0,947 | 0,985 |
+| Error frente al xG real | **0,614** | 0,619 | — |
+| Acierto 1X2 | 45 % | **48 %** | — |
+| Log‑loss 1X2 | 1,019 | **1,012** | — |
+
+En goles, el modelo **empata con las casas de apuestas**. En el 1X2 el mercado sigue un poco por delante.
 
 ### 🌐 Web diaria — [`docs/`](docs/)
 [`code/Generar_Web.py`](code/Generar_Web.py) genera una página estática (sin dependencias, con modo claro y oscuro) con las probabilidades de la temporada, un mapa de calor de posiciones, la jornada, la clasificación y las métricas. El workflow [`.github/workflows/actualizar_web.yml`](.github/workflows/actualizar_web.yml) la regenera **cada día a las 07:00 UTC**.
@@ -99,6 +114,7 @@ Los resultados completos están en [`Predicciones/`](Predicciones/) y se actuali
 │   ├── Modelo.py                # XGBoost Tweedie + Dixon-Coles + 1X2 calibrado
 │   ├── Prediccion_Jornada.py    # Próximos partidos vs mercado
 │   ├── Simulacion_Temporada.py  # Monte Carlo de 10.000 temporadas
+│   ├── Backtest_Temporada.py    # Jornadas jugadas: modelo vs realidad vs mercado
 │   ├── Generar_Web.py           # docs/index.html
 │   └── Pipeline.py              # Todo de principio a fin
 ├── Data/                        # Datos descargados y procesados
@@ -119,7 +135,7 @@ python code/Pipeline.py --completo    # con búsqueda de hiperparámetros y vali
 
 ## 💡 Siguientes pasos
 
-* Ejecutar el scraper de FlashScore en temporadas pasadas para tener **xG real** en todo el histórico (ahora solo 2026‑27 lo trae de serie).
+* Separar el **xG real** y el **xG estimado** en variables distintas. Ahora se mezclan, y la validación empeora un poco (log‑loss de 0,9805 a 0,9840) porque el entrenamiento usa casi siempre xG estimado.
 * Añadir **valor de mercado** de la plantilla (Transfermarkt), como en el Mundial.
 * Modelos de **córners y tarjetas** (los datos ya están descargados, incluido el árbitro).
 * Actualizar el Elo **dentro** de cada temporada simulada para que la forma evolucione a lo largo del Monte Carlo.
