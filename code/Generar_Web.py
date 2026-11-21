@@ -29,6 +29,8 @@ def main():
         'jornada': leer('predicciones_jornada.csv'),
         'posiciones': {'equipos': pos.index.tolist(), 'matriz': pos.values.round(4).tolist()},
         'metricas': metricas,
+        'backtest_resumen': leer('backtest_resumen.csv'),
+        'backtest_partidos': leer('backtest_partidos.csv'),
     }
     with open(os.path.join(os.path.dirname(__file__), 'plantilla_web.html'), encoding='utf-8') as f:
         html = f.read().replace('/*__DATOS__*/null', json.dumps(datos, ensure_ascii=False))

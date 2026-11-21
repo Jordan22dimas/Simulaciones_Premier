@@ -58,6 +58,11 @@ tr:last-child td{border-bottom:0}
 .tri .a{background:#3d1a6e}.tri .x{background:#8a8a8a}.tri .b{background:#c25b1f}
 .p .meta{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:10px;gap:8px;flex-wrap:wrap}
 .vacio{color:var(--muted);padding:24px;text-align:center}
+.cmp{width:100%;margin-top:12px;font-size:13px}
+.cmp th,.cmp td{padding:4px 6px} .cmp th{position:static}
+td.ok{color:var(--good);font-weight:650}
+.filtro{display:flex;gap:8px;align-items:center;margin-bottom:12px;color:var(--muted);font-size:13px}
+.filtro select{font:inherit;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:4px 8px}
 .pos{color:var(--good)} .neg{color:var(--bad)}
 footer{color:var(--muted);font-size:13px;margin-top:32px}
 .tema{float:right;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:6px 10px;cursor:pointer;font:inherit}
@@ -74,6 +79,7 @@ ul.m{padding-left:18px;margin:0} ul.m li{margin:6px 0}
 <nav role="tablist">
   <button role="tab" data-s="temporada" aria-selected="true">Temporada</button>
   <button role="tab" data-s="jornada">Próxima jornada</button>
+  <button role="tab" data-s="backtest">Backtest</button>
   <button role="tab" data-s="posiciones">Posiciones</button>
   <button role="tab" data-s="clasif">Clasificación</button>
   <button role="tab" data-s="modelo">Modelo</button>
@@ -86,6 +92,16 @@ ul.m{padding-left:18px;margin:0} ul.m li{margin:6px 0}
     <div class="scroll"><table id="t-resumen"></table></div></div>
 </section>
 <section id="jornada"><div id="partidos"></div></section>
+<section id="backtest">
+  <div class="kpis" id="kpis-bt"></div>
+  <div class="card"><h2>¿Qué habría predicho el modelo en cada jornada?</h2>
+    <p class="sub" id="sub-bt"></p>
+    <div class="scroll"><table id="t-bt"></table></div></div>
+  <div class="card"><h2>Partido a partido</h2>
+    <p class="sub">Goles esperados del modelo y del mercado frente al resultado real y al xG real. ✓ = marcador exacto acertado.</p>
+    <div class="filtro"><label for="f-jor">Jornada</label><select id="f-jor"></select></div>
+    <div class="scroll"><table id="t-btp"></table></div></div>
+</section>
 <section id="posiciones"><div class="card"><h2>Probabilidad de cada posición final</h2>
   <p class="sub">Cada fila suma 100 %. Cuanto más intenso el color, más probable.</p>
   <div class="scroll"><table class="heat" id="t-heat"></table></div></div></section>
@@ -108,6 +124,7 @@ ul.m{padding-left:18px;margin:0} ul.m li{margin:6px 0}
 const D = /*__DATOS__*/null;
 const pct = (v, d=0) => v == null || isNaN(v) ? '–' : (v*100 < 0.5 && v > 0 ? '<1 %' : (v*100).toFixed(d) + ' %');
 const el = (id) => document.getElementById(id);
+const f2 = (v) => v == null || isNaN(v) ? '–' : Number(v).toFixed(2);
 
 // Tema
 (() => { try { const t = localStorage.getItem('tema'); if (t) document.documentElement.dataset.theme = t; } catch(e){}
@@ -162,11 +179,48 @@ if (!D.jornada.length) {
     return `<div class="p"><div class="f">${p.Fecha}${p.Hora ? ' · ' + p.Hora : ''}</div>
       <div class="eq"><span>${p.Local}</span><span>${p.Visitante}</span></div>
       <div class="tri"><div class="a" style="flex:${p.Prob_1}">${pct(p.Prob_1)}</div><div class="x" style="flex:${p.Prob_X}">${pct(p.Prob_X)}</div><div class="b" style="flex:${p.Prob_2}">${pct(p.Prob_2)}</div></div>
-      <div class="meta"><span>xG ${p.xG_Local.toFixed(2)} – ${p.xG_Visitante.toFixed(2)}</span><span>Marcador: <b>${p.Marcador_probable}</b></span>
-      <span>+2.5: ${pct(p.Prob_Over25)}</span><span>Ambos marcan: ${pct(p.Prob_BTTS)}</span></div>
-      ${p.Mercado_1 != null ? `<div class="meta"><span>Mercado: ${pct(p.Mercado_1)} / ${pct(p.Mercado_X)} / ${pct(p.Mercado_2)}</span>${valor}</div>` : ''}</div>`;
+      <div class="meta"><span>Marcador más probable: <b>${p.Marcador_probable}</b></span><span>Ambos marcan: ${pct(p.Prob_BTTS)}</span></div>
+      <table class="cmp"><thead><tr><th class="t"></th><th>Goles</th><th>1 / X / 2</th><th>+2,5</th></tr></thead><tbody>
+        <tr><td class="t"><b>Modelo</b></td><td>${f2(p.xG_Local)} – ${f2(p.xG_Visitante)}</td><td>${pct(p.Prob_1)} / ${pct(p.Prob_X)} / ${pct(p.Prob_2)}</td><td>${pct(p.Prob_Over25)}</td></tr>
+        ${p.Mercado_1 != null ? `<tr><td class="t">Mercado</td><td>${f2(p.Mercado_xG_Local)} – ${f2(p.Mercado_xG_Visitante)}</td><td>${pct(p.Mercado_1)} / ${pct(p.Mercado_X)} / ${pct(p.Mercado_2)}</td><td>${pct(p.Mercado_Over25)}</td></tr>` : ''}
+      </tbody></table>
+      ${p.Mercado_1 != null ? `<div class="meta">${valor}${p['Hándicap_asiático'] != null ? `<span>Hándicap asiático: ${p['Hándicap_asiático'] > 0 ? '+' : ''}${p['Hándicap_asiático']}</span>` : ''}</div>` : ''}</div>`;
   }).join('') + '</div>';
 }
+
+// Backtest
+(() => {
+  const BR = D.backtest_resumen || [], BP = D.backtest_partidos || [];
+  if (!BR.length) { el('sub-bt').textContent = 'Todavía no hay jornadas jugadas que evaluar.'; return; }
+  const T = BR.find(r => r.Jornada === 'Total'), filas = BR.filter(r => r.Jornada !== 'Total');
+  const mejor = (a, b) => a <= b ? 'pos' : '';
+  el('sub-bt').textContent = 'Modelo entrenado solo con temporadas anteriores; cada partido se predice con la información disponible justo antes de jugarse. MAE = error medio absoluto de goles por equipo (menor es mejor).';
+  el('kpis-bt').innerHTML = [
+    ['Goles reales', T.Goles_reales, `modelo ${Math.round(T.Goles_modelo)} · mercado ${Math.round(T.Goles_mercado)}`],
+    ['Error de goles (MAE)', f2(T.MAE_modelo), `mercado ${f2(T.MAE_mercado)} · media liga ${f2(T.MAE_media_liga)}`],
+    ['Error frente al xG real', f2(T.MAE_modelo_vs_xG), `mercado ${f2(T.MAE_mercado_vs_xG)}`],
+    ['Acierto 1X2', pct(T.Acierto_1X2_modelo), `mercado ${pct(T.Acierto_1X2_mercado)} · ${T.Marcadores_exactos} marcadores exactos`],
+  ].map(([l, v, d]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+  const fila = (r, neg) => `<tr${neg ? ' style="font-weight:650"' : ''}><td class="t">${r.Jornada === 'Total' ? 'Total' : 'J' + r.Jornada}</td><td>${r.Goles_reales}</td><td>${Math.round(r.Goles_modelo)}</td><td>${Math.round(r.Goles_mercado)}</td>
+    <td class="${mejor(r.MAE_modelo, r.MAE_mercado)}">${f2(r.MAE_modelo)}</td><td class="${mejor(r.MAE_mercado, r.MAE_modelo)}">${f2(r.MAE_mercado)}</td>
+    <td>${pct(r.Acierto_1X2_modelo)}</td><td>${pct(r.Acierto_1X2_mercado)}</td>
+    <td class="${mejor(r.LogLoss_modelo, r.LogLoss_mercado)}">${r.LogLoss_modelo.toFixed(3)}</td><td class="${mejor(r.LogLoss_mercado, r.LogLoss_modelo)}">${r.LogLoss_mercado.toFixed(3)}</td><td>${r.Marcadores_exactos}</td></tr>`;
+  el('t-bt').innerHTML = `<thead><tr><th class="t">Jornada</th><th>Goles reales</th><th>Goles modelo</th><th>Goles mercado</th><th>MAE modelo</th><th>MAE mercado</th>
+    <th>1X2 modelo</th><th>1X2 mercado</th><th>Log‑loss modelo</th><th>Log‑loss mercado</th><th>Exactos</th></tr></thead><tbody>` +
+    filas.map(r => fila(r)).join('') + fila(T, true) + '</tbody>';
+  const jors = [...new Set(BP.map(p => p.Jornada))];
+  el('f-jor').innerHTML = '<option value="">Todas</option>' + jors.map(j => `<option${j === jors[jors.length-1] ? ' selected' : ''}>${j}</option>`).join('');
+  const pintar = () => {
+    const j = el('f-jor').value;
+    el('t-btp').innerHTML = `<thead><tr><th>J</th><th class="t">Partido</th><th>Real</th><th>Modelo</th><th>Mercado</th><th>xG real</th><th>Marcador prob.</th><th>1 / X / 2 modelo</th></tr></thead><tbody>` +
+      BP.filter(p => !j || p.Jornada == j).map(p => `<tr><td class="n">${p.Jornada}</td><td class="t">${p.Local} – ${p.Visitante}</td>
+        <td><b>${p.Goles_Local}-${p.Goles_Visitante}</b></td><td>${f2(p.Modelo_Goles_Local)} – ${f2(p.Modelo_Goles_Visitante)}</td>
+        <td>${f2(p.Mercado_Goles_Local)} – ${f2(p.Mercado_Goles_Visitante)}</td><td>${f2(p.xG_real_Local)} – ${f2(p.xG_real_Visitante)}</td>
+        <td class="${p.Acierto_marcador ? 'ok' : ''}">${p.Marcador_probable}${p.Acierto_marcador ? ' ✓' : ''}</td>
+        <td>${pct(p.Prob_1)} / ${pct(p.Prob_X)} / ${pct(p.Prob_2)}</td></tr>`).join('') + '</tbody>';
+  };
+  el('f-jor').onchange = pintar; pintar();
+})();
 
 // Clasificación actual
 el('t-clasif').innerHTML = '<thead><tr><th class="n">#</th><th class="t">Equipo</th><th>PJ</th><th>G</th><th>E</th><th>P</th><th>GF</th><th>GC</th><th>DG</th><th>Pts</th></tr></thead><tbody>' +

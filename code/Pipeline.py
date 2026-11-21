@@ -9,7 +9,7 @@ import warnings
 
 warnings.filterwarnings('ignore', category=UserWarning)
 
-import Descarga_Datos, Data_Cleaning, Modelo, Prediccion_Jornada, Simulacion_Temporada, Generar_Web
+import Descarga_Datos, Data_Cleaning, Modelo, Prediccion_Jornada, Simulacion_Temporada, Backtest_Temporada, Generar_Web
 
 PASOS = [
     ('1. Descarga de datos', Descarga_Datos.main),
@@ -17,7 +17,8 @@ PASOS = [
     ('3. Modelo', Modelo.main),
     ('4. Próxima jornada', Prediccion_Jornada.main),
     ('5. Monte Carlo temporada', Simulacion_Temporada.main),
-    ('6. Web', Generar_Web.main),
+    ('6. Backtest de la temporada', Backtest_Temporada.main),
+    ('7. Web', Generar_Web.main),
 ]
 
 if __name__ == '__main__':
